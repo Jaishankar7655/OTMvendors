@@ -39,8 +39,8 @@ const Navbar = () => {
                 <img className="h-12" src={logo} alt="" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-rose-400">
-                  One Touch <span className="text-red-600">Moments</span>
+                <h1 className="text-2xl font-bold text-red-600">
+                 One touch moment
                 </h1>
               </div>
             </Link>

@@ -26,6 +26,8 @@ import VendorList from "./Components/VendorList";
 import LoverStrip from "./Components/VendorList";
 import Services from "./Components/Services";
 import ServiceDetails from "./Components/ServiceDetails";
+import EditServices from "./Components/EditServices";
+import PaymentComponent from "./Payment/PaymentComponent";
 
 function AppRouter() {
   return (
@@ -76,6 +78,8 @@ function AppRouter() {
         <Route path="/ServiceDetails" element={<ServiceDetails />} />
         <Route path="/VendorList" element={<VendorList />} />
         <Route path="/Services" element={<Services />} />
+        <Route path="/EditServices" element={<EditServices />} />
+        <Route path="/payment" element={<PaymentComponent />} />
       </Routes>
     </>
   );

@@ -2,14 +2,14 @@
 // Set user data in both session storage and local storage
 export const setUserSession = (userData) => {
   if (!userData) return;
-  
+
   // Calculate expiry time (10 days from now) if not already set
   if (!userData.expiryTime) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 10);
     userData.expiryTime = expiryDate.getTime();
   }
-  
+
   // Store in both storages for persistence
   sessionStorage.setItem("userData", JSON.stringify(userData));
   localStorage.setItem("userData", JSON.stringify(userData));
@@ -18,28 +18,28 @@ export const setUserSession = (userData) => {
 // Get user data from storage with fallback to localStorage
 export const getUserSession = () => {
   let userData = sessionStorage.getItem("userData");
-  
+
   // If not in sessionStorage, try localStorage (for page refreshes)
   if (!userData) {
     userData = localStorage.getItem("userData");
-    
+
     // If found in localStorage but not in sessionStorage, restore to sessionStorage
     if (userData) {
       sessionStorage.setItem("userData", userData);
     }
   }
-  
+
   if (!userData) return null;
-  
+
   try {
     const parsedData = JSON.parse(userData);
-    
+
     // Check if token has expired
     if (parsedData.expiryTime && new Date().getTime() > parsedData.expiryTime) {
       clearUserSession();
       return null;
     }
-    
+
     return parsedData;
   } catch (error) {
     console.error("Error parsing user data:", error);

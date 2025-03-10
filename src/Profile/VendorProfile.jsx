@@ -19,6 +19,7 @@ const VendorProfile = () => {
     type: "",
   });
   const [activeTab, setActiveTab] = useState("profile");
+  
 
   useEffect(() => {
     const storedUserData = sessionStorage.getItem("userData");

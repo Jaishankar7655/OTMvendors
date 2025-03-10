@@ -14,7 +14,12 @@ const BandRegister = () => {
     handleSubmit,
     setValue,
     formState: { errors },
-  } = useForm();
+  } = useForm({
+    defaultValues: {
+      service_cat: "Band",
+      amount: "699",
+    },
+  });
 
   useEffect(() => {
     try {
@@ -31,13 +36,12 @@ const BandRegister = () => {
   }, [setValue, navigate]);
 
   useEffect(() => {
-    // Simulate progress when submitting
     let progressInterval;
     if (isSubmitting) {
       progressInterval = setInterval(() => {
         setSubmitProgress((prev) => {
           const newProgress = prev + Math.random() * 15;
-          return newProgress > 90 ? 90 : newProgress; // Cap at 90% until actual completion
+          return newProgress > 90 ? 90 : newProgress;
         });
       }, 600);
     } else {
@@ -50,115 +54,88 @@ const BandRegister = () => {
   const onSubmit = async (data) => {
     setIsSubmitting(true);
     setError(null);
-    setSuccess(null); // Reset success message
+    setSuccess(null);
 
     try {
       const formData = new FormData();
 
-      // Add text fields to FormData
-      formData.append("vendor_id", data.vendor_id);
-      formData.append("service_cat", "Band"); // Adding the missing service_cat
-      formData.append("firm_name", data.firm_name);
-      formData.append("email", data.email);
-      formData.append("phone", data.phone);
-      formData.append("house_no", data.house_no);
-      formData.append("city", data.city);
-      formData.append("near_by", data.near_by);
-      formData.append("district", data.district);
-      formData.append("state", data.state);
-      formData.append("pincode", data.pincode);
+      // Add required fields
+      formData.append("vendor_id", data.vendor_id || "");
+      formData.append("service_cat", "Band");
+      formData.append("firm_name", data.firm_name || "");
+      formData.append("email", data.email || "");
+      formData.append("description", data.description || "");
+      formData.append("phone", data.phone || "");
+      formData.append("amount", "699"); // Fixed amount for band service
+      formData.append("house_no", data.house_no || "");
+      formData.append("city", data.city || "");
+      formData.append("near_by", data.near_by || "");
+      formData.append("district", data.district || "");
+      formData.append("state", data.state || "");
+      formData.append("pincode", data.pincode || "");
 
-      // Handle specifications array properly
-      if (data.specifications && data.specifications.length > 0) {
-        // Make sure we're correctly appending each specification
-        data.specifications.forEach((spec) => {
-          formData.append("specifications[]", spec);
-        });
+      // Handle specifications array
+      if (data.specifications) {
+        const specs = Array.isArray(data.specifications)
+          ? data.specifications
+          : [data.specifications];
+        specs.forEach((spec) => formData.append("specifications[]", spec));
       }
 
-      // Handle images properly - making sure we include the file extensions
-      if (data.images && data.images.length > 0) {
+      // Handle media files
+      if (data.images?.length) {
         Array.from(data.images).forEach((file, index) => {
-          formData.append(`images[${index}]`, file);
+          if (file instanceof File) {
+            formData.append(`images[${index}]`, file);
+          }
         });
       }
 
-      // Handle videos properly - making sure we include the file extensions
-      if (data.videos && data.videos.length > 0) {
+      if (data.videos?.length) {
         Array.from(data.videos).forEach((file, index) => {
-          formData.append(`videos[${index}]`, file);
+          if (file instanceof File) {
+            formData.append(`videos[${index}]`, file);
+          }
         });
       }
-
-      // Log FormData to verify content (for debugging)
-      console.log("Form data being sent:");
-      for (let pair of formData.entries()) {
-        console.log(
-          pair[0] + ": " + (pair[1] instanceof File ? pair[1].name : pair[1])
-        );
-      }
-
-      // Try API endpoint with timeout to prevent long waiting periods
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased to 60 seconds for large video uploads
 
       const response = await fetch(
-        "https://backend.onetouchmoments.com/vendor_controller/Vendor_bussiness",
+        "https://backend.onetouchmoments.com/vendor_controller/Vendor_bussiness/",
         {
           method: "POST",
           body: formData,
-          signal: controller.signal,
         }
       );
 
-      clearTimeout(timeoutId);
-      setSubmitProgress(100); // Set to 100% when complete
-
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Server error! Status: ${response.status}, Details: ${errorText}`
-        );
+        throw new Error(`Server error! Status: ${response.status}`);
       }
 
-      // Try to parse response as JSON, but handle potential errors
-      let result;
-      try {
-        result = await response.json();
-      } catch (jsonError) {
-        console.warn("Could not parse response as JSON:", jsonError);
-        // Continue with processing - we'll handle non-JSON responses below
-      }
+      const result = await response.json();
 
-      // Handle the parsed response
-      if (result && result.status === 1) {
+      if (result.status === 1) {
         setSuccess("Service submitted successfully!");
         setTimeout(() => {
-          navigate("/services");
+          navigate(
+            `/payment?service_id=${result.service_id}&vendor_id=${data.vendor_id}`
+          );
         }, 2000);
-      } else if (result && result.message) {
-        setError(result.message);
       } else {
-        // If the response is OK but doesn't match our expected format,
-        // assume submission was successful
-        setSuccess("Service submitted successfully!");
-        setTimeout(() => {
-          navigate("/services");
-        }, 2000);
+        throw new Error(result.message || "Failed to submit service");
       }
     } catch (error) {
       console.error("Submission error:", error);
       setError(
-        "An error occurred while submitting your service. Please try again later."
+        error.message || "An error occurred while submitting your service."
       );
     } finally {
-      setIsSubmitting(false); // Make sure to set submitting to false in all cases
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-gradient-to-r from-white to-red-50 p-8 rounded-xl shadow-lg relative overflow-hidden">
-      {/* Background decorative elements */}
+      {/* Background Elements */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-red-100 rounded-full -mr-32 -mt-32 opacity-50"></div>
       <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-100 rounded-full -ml-32 -mb-32 opacity-50"></div>
 
@@ -167,7 +144,7 @@ const BandRegister = () => {
         <div className="h-1 w-20 bg-red-500 mx-auto mt-2 rounded-full"></div>
       </h2>
 
-      {/* Success message */}
+      {/* Success Message */}
       {success && (
         <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded mb-6 shadow-md">
           <div className="flex items-start">
@@ -189,7 +166,7 @@ const BandRegister = () => {
         </div>
       )}
 
-      {/* Error message */}
+      {/* Error Message */}
       {error && (
         <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded mb-6 shadow-md">
           <div className="flex items-start">
@@ -216,43 +193,30 @@ const BandRegister = () => {
         className="space-y-5 relative z-10"
         encType="multipart/form-data"
       >
-        {/* Service Info Section */}
+        {/* Hidden Fields */}
+        <input type="hidden" {...register("service_cat")} value="Band" />
+        <input type="hidden" {...register("amount")} value="699" />
+        <input type="hidden" {...register("vendor_id")} />
+
+        {/* Service Information Section */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
-            Service Information
+            Band Information
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <input
-                name="service_cat"
-                type="hidden"
-                value="Band"
-                {...register("service_cat")}
-              />
-            </div>
-
-            <div>
-              <input
-                hidden
-                type="text"
-                {...register("vendor_id")}
-                placeholder="Vendor ID"
-                className="w-full p-3 border border-gray-200 rounded-lg bg-gray-100"
-                readOnly
-              />
-            </div>
-
+            {/* Continue with all the fields from Photovideo component */}
+            {/* Firm Name */}
             <div>
               <label className="block text-gray-700 text-sm font-medium mb-1">
-                Firm Name
+                Band/Company Name
               </label>
               <input
                 type="text"
                 {...register("firm_name", {
-                  required: "Firm name is required",
+                  required: "Band name is required",
                 })}
-                placeholder="Firm Name"
+                placeholder="Enter your band or company name"
                 className={`w-full p-3 border ${
                   errors.firm_name
                     ? "border-red-600 bg-red-50"
@@ -266,6 +230,7 @@ const BandRegister = () => {
               )}
             </div>
 
+            {/* Email */}
             <div>
               <label className="block text-gray-700 text-sm font-medium mb-1">
                 Email
@@ -291,6 +256,7 @@ const BandRegister = () => {
               )}
             </div>
 
+            {/* Phone */}
             <div>
               <label className="block text-gray-700 text-sm font-medium mb-1">
                 Phone
@@ -318,7 +284,7 @@ const BandRegister = () => {
           </div>
         </div>
 
-        {/* Address Section */}
+        {/* Address Section - Same as Photovideo */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
             Address Details
@@ -454,27 +420,36 @@ const BandRegister = () => {
                 </p>
               )}
             </div>
+
+            <div>
+              <input
+                hidden
+                type="number"
+                defaultValue="699"
+                {...register("amount", {
+                  required: "Amount is required",
+                })}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Features Section */}
+        {/* Band Features Section */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
-            Service Features
+            Band Features
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
-              "Live Wedding Band",
-              "Jazz Band",
-              "Rock Band",
-              "Bollywood Band",
-              "Classical Music Band",
-              "Folk Music Band",
-              "Brass Band",
-              "Acoustic Band",
-              "Cover Band",
-              "Fusion Music Band",
+              "Wedding Band",
+              "Corporate Events",
+              "Live Concerts",
+              "Traditional Music",
+              "Bollywood Music",
+              "Classical Music",
+              "Folk Music",
+              "Fusion Band",
             ].map((spec) => (
               <label
                 key={spec}
@@ -492,7 +467,50 @@ const BandRegister = () => {
           </div>
         </div>
 
-        {/* Media Upload Section */}
+        {/* Description Section */}
+        <div className="bg-white p-5 rounded-lg shadow-md mb-6">
+          <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
+            Band Description
+          </h3>
+
+          <div>
+            <label className="block text-gray-700 text-sm font-medium mb-2">
+              Tell us about your band
+            </label>
+            <textarea
+              {...register("description", {
+                required: "Description is required",
+                minLength: {
+                  value: 100,
+                  message: "Description should be at least 100 characters",
+                },
+                maxLength: {
+                  value: 1000,
+                  message: "Description cannot exceed 1000 characters",
+                },
+              })}
+              placeholder="Describe your band's music style, performances, experience, team members, and special offerings..."
+              rows={6}
+              className={`w-full p-3 border ${
+                errors.description
+                  ? "border-red-600 bg-red-50"
+                  : "border-gray-300"
+              } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200 resize-none`}
+            ></textarea>
+            {errors.description && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors.description.message}
+              </p>
+            )}
+            <p className="text-gray-500 text-xs mt-2">
+              Min 100 characters, max 1000 characters. Include details about
+              your band's experience, music style, team size, and special
+              performances.
+            </p>
+          </div>
+        </div>
+
+        {/* Media Upload Section - Same as Photovideo */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
             Media Upload

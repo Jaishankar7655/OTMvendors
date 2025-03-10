@@ -31,12 +31,13 @@ const Photovideo = () => {
   }, [setValue, navigate]);
 
   useEffect(() => {
+    // Simulate progress when submitting
     let progressInterval;
     if (isSubmitting) {
       progressInterval = setInterval(() => {
         setSubmitProgress((prev) => {
           const newProgress = prev + Math.random() * 15;
-          return newProgress > 90 ? 90 : newProgress;
+          return newProgress > 90 ? 90 : newProgress; // Cap at 90% until actual completion
         });
       }, 600);
     } else {
@@ -52,14 +53,21 @@ const Photovideo = () => {
     setSuccess(null);
 
     try {
+      // Validate amount
+      if (!data.amount || isNaN(data.amount) || Number(data.amount) <= 0) {
+        throw new Error("Please enter a valid amount greater than 0");
+      }
+
       const formData = new FormData();
 
-      // Add text fields to FormData
+      // Add required fields
       formData.append("vendor_id", data.vendor_id);
-      formData.append("service_cat", data.service_cat);
+      formData.append("service_cat", "Photo video");
       formData.append("firm_name", data.firm_name);
       formData.append("email", data.email);
+      formData.append("description", data.description);
       formData.append("phone", data.phone);
+      formData.append("amount", data.amount.toString());
       formData.append("house_no", data.house_no);
       formData.append("city", data.city);
       formData.append("near_by", data.near_by);
@@ -68,13 +76,8 @@ const Photovideo = () => {
       formData.append("pincode", data.pincode);
 
       // Handle specifications array properly
-      if (data.specifications) {
-        // Convert to array if it's not already
-        const specsArray = Array.isArray(data.specifications) 
-          ? data.specifications 
-          : [data.specifications];
-          
-        specsArray.forEach(spec => {
+      if (data.specifications && data.specifications.length > 0) {
+        data.specifications.forEach((spec) => {
           formData.append("specifications[]", spec);
         });
       }
@@ -93,19 +96,19 @@ const Photovideo = () => {
         });
       }
 
-      // Log FormData to verify content
+      // Log FormData for debugging
+      console.log("Form data being sent:");
       for (let pair of formData.entries()) {
         console.log(
           pair[0] + ": " + (pair[1] instanceof File ? pair[1].name : pair[1])
         );
       }
 
-      // Setup API request with timeout
+      // Set timeout for large uploads
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       const response = await fetch(
-      
         "https://backend.onetouchmoments.com/vendor_controller/Vendor_bussiness/",
         {
           method: "POST",
@@ -124,34 +127,65 @@ const Photovideo = () => {
         );
       }
 
-      // Parse response safely
+      // Parse response as JSON
       let result;
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.includes("application/json")) {
+      try {
         result = await response.json();
-      } else {
-        // Handle non-JSON response
-        const textResponse = await response.text();
-        console.log("Server returned non-JSON response:", textResponse);
-        setSuccess("Service submitted successfully!");
-        setTimeout(() => navigate("/services"), 2000);
-        return;
+      } catch (jsonError) {
+        console.warn("Could not parse response as JSON:", jsonError);
       }
 
-      // Handle JSON response
+      // Handle successful submission
       if (result && result.status === 1) {
         setSuccess("Service submitted successfully!");
-        setTimeout(() => navigate("/services"), 2000);
+
+        // Store service_id from response for payment processing
+        const serviceId = result.service_id || result.data?.service_id;
+
+        // Navigate to payment with necessary params after a short delay
+        setTimeout(() => {
+          // Construct URL with query parameters
+          const paymentUrl = `/payment?service_id=${serviceId}&vendor_id=${data.vendor_id}`;
+          navigate(paymentUrl);
+        }, 2000);
       } else if (result && result.message) {
         setError(result.message);
       } else {
+        // Fallback success handling if response format is unexpected
         setSuccess("Service submitted successfully!");
-        setTimeout(() => navigate("/services"), 2000);
+
+        // In case service_id isn't available, fetch it from another endpoint
+        try {
+          const serviceResponse = await fetch(
+            `https://backend.onetouchmoments.com/vendor_controller/Vendor_services/get_latest_service?vendor_id=${data.vendor_id}`
+          );
+
+          if (serviceResponse.ok) {
+            const serviceData = await serviceResponse.json();
+            if (serviceData.status === 1 && serviceData.data) {
+              const latestServiceId = serviceData.data.service_id;
+
+              setTimeout(() => {
+                navigate(
+                  `/payment?service_id=${latestServiceId}&vendor_id=${data.vendor_id}`
+                );
+              }, 2000);
+              return;
+            }
+          }
+        } catch (serviceError) {
+          console.error("Error fetching service ID:", serviceError);
+        }
+
+        // Fallback with just vendor_id if service_id isn't available
+        setTimeout(() => {
+          navigate(`/payment?vendor_id=${data.vendor_id}`);
+        }, 2000);
       }
     } catch (error) {
       console.error("Submission error:", error);
       setError(
-        error.message || "An error occurred while submitting your service. Please try again later."
+        "An error occurred while submitting your service. Please try again later."
       );
     } finally {
       setIsSubmitting(false);
@@ -159,13 +193,13 @@ const Photovideo = () => {
   };
 
   return (
-    <div className=" max-w-3xl mx-auto mt-10 bg-gradient-to-r from-white to-red-50 p-8 rounded-xl shadow-lg relative overflow-hidden">
+    <div className="max-w-3xl mx-auto mt-10 bg-gradient-to-r from-white to-red-50 p-8 rounded-xl shadow-lg relative overflow-hidden">
       {/* Background decorative elements */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-red-100 rounded-full -mr-32 -mt-32 opacity-50"></div>
       <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-100 rounded-full -ml-32 -mb-32 opacity-50"></div>
 
       <h2 className="text-center text-3xl font-bold mb-6 text-red-700 relative">
-        Submit Your Service
+        Photo & Video Services Registration
         <div className="h-1 w-20 bg-red-500 mx-auto mt-2 rounded-full"></div>
       </h2>
 
@@ -218,43 +252,25 @@ const Photovideo = () => {
         className="space-y-5 relative z-10"
         encType="multipart/form-data"
       >
-        {/* Form sections remain the same */}
         {/* Service Info Section */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
-          {/* Service info fields remain the same */}
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
             Service Information
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-700 text-sm font-medium mb-1">
-                Service Category
-              </label>
               <input
-                type="text"
-                {...register("service_cat", {
-                  required: "Service Category is required",
-                })}
-                placeholder="Service Category"
-                className={`w-full p-3 border ${
-                  errors.service_cat
-                    ? "border-red-600 bg-red-50"
-                    : "border-gray-300"
-                } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
+                name="service_cat"
+                type="hidden"
+                {...register("service_cat")}
+                value="photo video"
               />
-              {errors.service_cat && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.service_cat.message}
-                </p>
-              )}
             </div>
 
             <div>
-              <label className="block text-gray-700 text-sm font-medium mb-1">
-                Vendor ID
-              </label>
               <input
+                hidden
                 type="text"
                 {...register("vendor_id")}
                 placeholder="Vendor ID"
@@ -340,7 +356,6 @@ const Photovideo = () => {
 
         {/* Address Section */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
-          {/* Address fields remain the same */}
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
             Address Details
           </h3>
@@ -410,321 +425,372 @@ const Photovideo = () => {
             </div>
 
             <div>
-            <label className="block text-gray-700 text-sm font-medium mb-1">
-               District
-             </label>
-             <input
-               type="text"
-               {...register("district", { required: "District is required" })}
-               placeholder="District"
-               className={`w-full p-3 border ${
-                 errors.district
-                   ? "border-red-600 bg-red-50"
-                   : "border-gray-300"
-               } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
-             />
-             {errors.district && (
-               <p className="text-red-500 text-xs mt-1">
-                 {errors.district.message}
-               </p>
-             )}
-           </div>
+              <label className="block text-gray-700 text-sm font-medium mb-1">
+                District
+              </label>
+              <input
+                type="text"
+                {...register("district", { required: "District is required" })}
+                placeholder="District"
+                className={`w-full p-3 border ${
+                  errors.district
+                    ? "border-red-600 bg-red-50"
+                    : "border-gray-300"
+                } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
+              />
+              {errors.district && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.district.message}
+                </p>
+              )}
+            </div>
 
-           <div>
-             <label className="block text-gray-700 text-sm font-medium mb-1">
-               State
-             </label>
-             <input
-               type="text"
-               {...register("state", { required: "State is required" })}
-               placeholder="State"
-               className={`w-full p-3 border ${
-                 errors.state ? "border-red-600 bg-red-50" : "border-gray-300"
-               } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
-             />
-             {errors.state && (
-               <p className="text-red-500 text-xs mt-1">
-                 {errors.state.message}
-               </p>
-             )}
-           </div>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1">
+                State
+              </label>
+              <input
+                type="text"
+                {...register("state", { required: "State is required" })}
+                placeholder="State"
+                className={`w-full p-3 border ${
+                  errors.state ? "border-red-600 bg-red-50" : "border-gray-300"
+                } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
+              />
+              {errors.state && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.state.message}
+                </p>
+              )}
+            </div>
 
-           <div>
-             <label className="block text-gray-700 text-sm font-medium mb-1">
-               Pincode
-             </label>
-             <input
-               type="text"
-               {...register("pincode", {
-                 required: "Pincode is required",
-                 pattern: {
-                   value: /^[0-9]{6}$/,
-                   message: "Please enter a valid 6-digit pincode",
-                 },
-               })}
-               placeholder="Pincode"
-               className={`w-full p-3 border ${
-                 errors.pincode
-                   ? "border-red-600 bg-red-50"
-                   : "border-gray-300"
-               } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
-             />
-             {errors.pincode && (
-               <p className="text-red-500 text-xs mt-1">
-                 {errors.pincode.message}
-               </p>
-             )}
-           </div>
-         </div>
-       </div>
+          
 
-       {/* Features Section */}
-       <div className="bg-white p-5 rounded-lg shadow-md mb-6">
-         <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
-           Service Features
-         </h3>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1">
+                Pincode
+              </label>
+              <input
+                type="text"
+                {...register("pincode", {
+                  required: "Pincode is required",
+                  pattern: {
+                    value: /^[0-9]{6}$/,
+                    message: "Please enter a valid 6-digit pincode",
+                  },
+                })}
+                placeholder="Pincode"
+                className={`w-full p-3 border ${
+                  errors.pincode
+                    ? "border-red-600 bg-red-50"
+                    : "border-gray-300"
+                } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
+              />
+              {errors.pincode && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.pincode.message}
+                </p>
+              )}
+            </div>
 
-         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-           {[
-             "Wedding Photography",
-             "Event Photography",
-             "Portrait Photography",
-             "Fashion Photography",
-             "Product Photography",
-             "Drone Photography",
-             "Cinematography",
-             "Music Videos",
-           ].map((spec) => (
-             <label
-               key={spec}
-               className="flex items-center space-x-3 p-2 border border-gray-200 rounded-lg hover:bg-red-50 transition cursor-pointer"
-             >
-               <input
-                 type="checkbox"
-                 {...register("specifications")}
-                 value={spec}
-                 className="form-checkbox h-5 w-5 text-red-600 rounded"
-               />
-               <span className="text-gray-700">{spec}</span>
-             </label>
-           ))}
-         </div>
-       </div>
 
-       {/* Media Upload Section */}
-       <div className="bg-white p-5 rounded-lg shadow-md mb-6">
-         <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
-           Media Upload
-         </h3>
+            <div>
+              <input
+              hidden
+                type="number"
+                defaultValue="699"
+                {...register("amount", {
+                  required: "Amount is required",
+                })}
+              />
+            </div>
 
-         <div className="space-y-5">
-           <div>
-             <label className="block text-gray-700 font-medium mb-2">
-               Upload Images
-             </label>
-             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition duration-200">
-               <input
-                 type="file"
-                 {...register("images", {
-                   validate: {
-                     fileSize: (files) => {
-                       if (!files || files.length === 0) return true;
-                       const maxSize = 5 * 1024 * 1024; // 5MB
-                       return (
-                         Array.from(files).every(
-                           (file) => file.size <= maxSize
-                         ) || "Each image must be less than 5MB"
-                       );
-                     },
-                   },
-                 })}
-                 multiple
-                 accept="image/*"
-                 className="hidden"
-                 id="image-upload"
-               />
-               <label htmlFor="image-upload" className="cursor-pointer">
-                 <svg
-                   className="mx-auto h-12 w-12 text-gray-400"
-                   stroke="currentColor"
-                   fill="none"
-                   viewBox="0 0 48 48"
-                   aria-hidden="true"
-                 >
-                   <path
-                     d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H8m36-12h-4m4 0H20"
-                     strokeWidth="2"
-                     strokeLinecap="round"
-                     strokeLinejoin="round"
-                   />
-                 </svg>
-                 <p className="mt-1 text-sm text-gray-600">
-                   <span className="font-medium text-red-600 hover:text-red-500">
-                     Click to upload images
-                   </span>{" "}
-                   or drag and drop
-                 </p>
-                 <p className="text-xs text-gray-500 mt-2">
-                   Supported formats: JPG, PNG, GIF (Max: 5MB each)
-                 </p>
-               </label>
-             </div>
-             {errors.images && (
-               <p className="text-red-500 text-xs mt-1">
-                 {errors.images.message}
-               </p>
-             )}
-           </div>
 
-           <div>
-             <label className="block text-gray-700 font-medium mb-2">
-               Upload Videos
-             </label>
-             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition duration-200">
-               <input
-                 type="file"
-                 {...register("videos", {
-                   validate: {
-                     fileSize: (files) => {
-                       if (!files || files.length === 0) return true;
-                       const maxSize = 50 * 1024 * 1024; // 50MB
-                       return (
-                         Array.from(files).every(
-                           (file) => file.size <= maxSize
-                         ) || "Each video must be less than 50MB"
-                       );
-                     },
-                   },
-                 })}
-                 multiple
-                 accept="video/*"
-                 className="hidden"
-                 id="video-upload"
-               />
-               <label htmlFor="video-upload" className="cursor-pointer">
-                 <svg
-                   xmlns="http://www.w3.org/2000/svg"
-                   className="mx-auto h-12 w-12 text-gray-400"
-                   fill="none"
-                   viewBox="0 0 24 24"
-                   stroke="currentColor"
-                 >
-                   <path
-                     strokeLinecap="round"
-                     strokeLinejoin="round"
-                     strokeWidth={2}
-                     d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                   />
-                 </svg>
-                 <p className="mt-1 text-sm text-gray-600">
-                   <span className="font-medium text-red-600 hover:text-red-500">
-                     Click to upload videos
-                   </span>{" "}
-                   or drag and drop
-                 </p>
-                 <p className="text-xs text-gray-500 mt-2">
-                   Supported formats: MP4, MOV, AVI (Max: 50MB each)
-                 </p>
-               </label>
-             </div>
-             {errors.videos && (
-               <p className="text-red-500 text-xs mt-1">
-                 {errors.videos.message}
-               </p>
-             )}
-           </div>
-         </div>
-       </div>
 
-       {/* Submit Button */}
-       <button
-         type="submit"
-         disabled={isSubmitting}
-         className={`w-full relative overflow-hidden ${
-           isSubmitting
-             ? "bg-gray-400 cursor-not-allowed"
-             : "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
-         } text-white text-lg font-semibold py-3 rounded-lg shadow-lg transform transition duration-200 ${
-           !isSubmitting && "hover:scale-105"
-         }`}
-       >
-         {isSubmitting && (
-           <div
-             className="absolute top-0 left-0 h-full bg-white bg-opacity-20"
-             style={{ width: `${submitProgress}%` }}
-           ></div>
-         )}
+          </div>
+        </div>
 
-         <div className="flex items-center justify-center">
-           {isSubmitting ? (
-             <>
-               <svg
-                 className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                 xmlns="http://www.w3.org/2000/svg"
-                 fill="none"
-                 viewBox="0 0 24 24"
-               >
-                 <circle
-                   className="opacity-25"
-                   cx="12"
-                   cy="12"
-                   r="10"
-                   stroke="currentColor"
-                   strokeWidth="4"
-                 ></circle>
-                 <path
-                   className="opacity-75"
-                   fill="currentColor"
-                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                 ></path>
-               </svg>
-               <span>Submitting your service details...</span>
-             </>
-           ) : (
-             <span>Submit Service</span>
-           )}
-         </div>
-       </button>
+        {/* Features Section */}
+        <div className="bg-white p-5 rounded-lg shadow-md mb-6">
+          <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
+            Service Features
+          </h3>
 
-       {/* Submission Progress Info */}
-       {isSubmitting && (
-         <div className="text-center text-gray-600 text-sm mt-2">
-           {submitProgress < 30 && "Preparing your data..."}
-           {submitProgress >= 30 &&
-             submitProgress < 60 &&
-             "Uploading files..."}
-           {submitProgress >= 60 &&
-             submitProgress < 90 &&
-             "Processing submission..."}
-           {submitProgress >= 90 && "Almost done..."}
-         </div>
-       )}
-     </form>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              "Wedding Photography",
+              "Event Photography",
+              "Portrait Photography",
+              "Fashion Photography",
+              "Product Photography",
+              "Drone Photography",
+              "Cinematography",
+              "Music Videos",
+            ].map((spec) => (
+              <label
+                key={spec}
+                className="flex items-center space-x-3 p-2 border border-gray-200 rounded-lg hover:bg-red-50 transition cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  {...register("specifications")}
+                  value={spec}
+                  className="form-checkbox h-5 w-5 text-red-600 rounded"
+                />
+                <span className="text-gray-700">{spec}</span>
+              </label>
+            ))}
+          </div>
+        </div>
 
-     <div className="text-center mt-8">
-       <a 
-         href="/"
-         className="inline-flex items-center text-red-600 hover:text-red-700 transition"
-       >
-         <svg
-           xmlns="http://www.w3.org/2000/svg"
-           className="h-5 w-5 mr-1"
-           fill="none"
-           viewBox="0 0 24 24"
-           stroke="currentColor"
-         >
-           <path
-             strokeLinecap="round"
-             strokeLinejoin="round"
-             strokeWidth={2}
-             d="M10 19l-7-7m0 0l7-7m-7 7h18"
-           />
-         </svg>
-         Return to Home
-       </a>
-     </div>
-   </div>
- );
+        <div>
+          <label className="block text-gray-700 text-sm font-medium mb-2">
+            Tell us about your services
+          </label>
+          <textarea
+            {...register("description", {
+              required: "Description is required",
+              minLength: {
+                value: 100,
+                message: "Description should be at least 100 characters",
+              },
+              maxLength: {
+                value: 1000,
+                message: "Description cannot exceed 1000 characters",
+              },
+            })}
+            placeholder="Describe your photography/videography services, experience, equipment, and any special offerings..."
+            rows={6}
+            className={`w-full p-3 border ${
+              errors.description
+                ? "border-red-600 bg-red-50"
+                : "border-gray-300"
+            } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200 resize-none`}
+          ></textarea>
+          {errors.description && (
+            <p className="text-red-500 text-xs mt-1">
+              {errors.description.message}
+            </p>
+          )}
+          <p className="text-gray-500 text-xs mt-2">
+            Min 100 characters, max 1000 characters. Include details about your
+            experience, equipment, style, and special services you offer.
+          </p>
+        </div>
+        {/* Media Upload Section */}
+        <div className="bg-white p-5 rounded-lg shadow-md mb-6">
+          <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
+            Media Upload
+          </h3>
+
+          <div className="space-y-5">
+            <div>
+              <label className="block text-gray-700 font-medium mb-2">
+                Upload Images
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition duration-200">
+                <input
+                  type="file"
+                  {...register("images", {
+                    validate: {
+                      fileSize: (files) => {
+                        if (!files || files.length === 0) return true;
+                        const maxSize = 5 * 1024 * 1024; // 5MB
+                        return (
+                          Array.from(files).every(
+                            (file) => file.size <= maxSize
+                          ) || "Each image must be less than 5MB"
+                        );
+                      },
+                    },
+                  })}
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label htmlFor="image-upload" className="cursor-pointer">
+                  <svg
+                    className="mx-auto h-12 w-12 text-gray-400"
+                    stroke="currentColor"
+                    fill="none"
+                    viewBox="0 0 48 48"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H8m36-12h-4m4 0H20"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <p className="mt-1 text-sm text-gray-600">
+                    <span className="font-medium text-red-600 hover:text-red-500">
+                      Click to upload images
+                    </span>{" "}
+                    or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Supported formats: JPG, PNG, GIF (Max: 5MB each)
+                  </p>
+                </label>
+              </div>
+              {errors.images && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.images.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-gray-700 font-medium mb-2">
+                Upload Videos
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition duration-200">
+                <input
+                  type="file"
+                  {...register("videos", {
+                    validate: {
+                      fileSize: (files) => {
+                        if (!files || files.length === 0) return true;
+                        const maxSize = 50 * 1024 * 1024; // 50MB
+                        return (
+                          Array.from(files).every(
+                            (file) => file.size <= maxSize
+                          ) || "Each video must be less than 50MB"
+                        );
+                      },
+                    },
+                  })}
+                  multiple
+                  accept="video/*"
+                  className="hidden"
+                  id="video-upload"
+                />
+                <label htmlFor="video-upload" className="cursor-pointer">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="mx-auto h-12 w-12 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  <p className="mt-1 text-sm text-gray-600">
+                    <span className="font-medium text-red-600 hover:text-red-500">
+                      Click to upload videos
+                    </span>{" "}
+                    or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Supported formats: MP4, MOV, AVI (Max: 50MB each)
+                  </p>
+                </label>
+              </div>
+              {errors.videos && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.videos.message}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className={`w-full relative overflow-hidden ${
+            isSubmitting
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600"
+          } text-white text-lg font-semibold py-3 rounded-lg shadow-lg transform transition duration-200 ${
+            !isSubmitting && "hover:scale-105"
+          }`}
+        >
+          {isSubmitting && (
+            <div
+              className="absolute top-0 left-0 h-full bg-white bg-opacity-20"
+              style={{ width: `${submitProgress}%` }}
+            ></div>
+          )}
+
+          <div className="flex items-center justify-center">
+            {isSubmitting ? (
+              <>
+                <svg
+                  className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span>Submitting your service details...</span>
+              </>
+            ) : (
+              <span>Submit Service</span>
+            )}
+          </div>
+        </button>
+
+        {/* Submission Progress Info */}
+        {isSubmitting && (
+          <div className="text-center text-gray-600 text-sm mt-2">
+            {submitProgress < 30 && "Preparing your data..."}
+            {submitProgress >= 30 &&
+              submitProgress < 60 &&
+              "Uploading files..."}
+            {submitProgress >= 60 &&
+              submitProgress < 90 &&
+              "Processing submission..."}
+            {submitProgress >= 90 && "Almost done..."}
+          </div>
+        )}
+      </form>
+
+      <div className="text-center mt-8">
+        <a
+          href="/"
+          className="inline-flex items-center text-red-600 hover:text-red-700 transition"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-5 w-5 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Return to Home
+        </a>
+      </div>
+    </div>
+  );
 };
 
 export default Photovideo;

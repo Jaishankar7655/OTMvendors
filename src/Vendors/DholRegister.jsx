@@ -53,14 +53,21 @@ const DholRegister = () => {
     setSuccess(null);
 
     try {
+      // Validate amount
+      if (!data.amount || isNaN(data.amount) || Number(data.amount) <= 0) {
+        throw new Error("Please enter a valid amount greater than 0");
+      }
+
       const formData = new FormData();
 
-      // Add text fields to FormData
+      // Add required fields
       formData.append("vendor_id", data.vendor_id);
       formData.append("service_cat", "Dhol");
       formData.append("firm_name", data.firm_name);
       formData.append("email", data.email);
+      formData.append("description", data.description);
       formData.append("phone", data.phone);
+      formData.append("amount", data.amount.toString());
       formData.append("house_no", data.house_no);
       formData.append("city", data.city);
       formData.append("near_by", data.near_by);
@@ -68,58 +75,123 @@ const DholRegister = () => {
       formData.append("state", data.state);
       formData.append("pincode", data.pincode);
 
-      // Handle specifications array
+      // Handle specifications array properly
       if (data.specifications && data.specifications.length > 0) {
         data.specifications.forEach((spec) => {
           formData.append("specifications[]", spec);
         });
       }
 
-      // Handle images
+      // Handle images properly
       if (data.images && data.images.length > 0) {
-        // Append each image file with a unique index
         Array.from(data.images).forEach((file, index) => {
           formData.append(`images[${index}]`, file);
         });
-        // Add total count of images
-        formData.append("image_count", data.images.length.toString());
       }
 
-      // Handle videos
+      // Handle videos properly
       if (data.videos && data.videos.length > 0) {
-        // Append each video file with a unique index
         Array.from(data.videos).forEach((file, index) => {
           formData.append(`videos[${index}]`, file);
         });
-        // Add total count of videos
-        formData.append("video_count", data.videos.length.toString());
       }
 
+      // Log FormData for debugging
+      console.log("Form data being sent:");
+      for (let pair of formData.entries()) {
+        console.log(
+          pair[0] + ": " + (pair[1] instanceof File ? pair[1].name : pair[1])
+        );
+      }
+
+      // Set timeout for large uploads
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
+
       const response = await fetch(
-        "https://backend.onetouchmoments.com/vendor_controller/Vendor_bussiness",
+        "https://backend.onetouchmoments.com/vendor_controller/Vendor_bussiness/",
         {
           method: "POST",
           body: formData,
+          signal: controller.signal,
         }
       );
 
+      clearTimeout(timeoutId);
+      setSubmitProgress(100);
+
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Server error! Status: ${response.status}, Details: ${errorText}`);
+        throw new Error(
+          `Server error! Status: ${response.status}, Details: ${errorText}`
+        );
       }
 
-      setSuccess("Service submitted successfully!");
-      setTimeout(() => {
-        navigate("/services");
-      }, 2000);
+      // Parse response as JSON
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.warn("Could not parse response as JSON:", jsonError);
+      }
 
+      // Handle successful submission
+      if (result && result.status === 1) {
+        setSuccess("Service submitted successfully!");
+
+        // Store service_id from response for payment processing
+        const serviceId = result.service_id || result.data?.service_id;
+
+        // Navigate to payment with necessary params after a short delay
+        setTimeout(() => {
+          // Construct URL with query parameters
+          const paymentUrl = `/payment?service_id=${serviceId}&vendor_id=${data.vendor_id}`;
+          navigate(paymentUrl);
+        }, 2000);
+      } else if (result && result.message) {
+        setError(result.message);
+      } else {
+        // Fallback success handling if response format is unexpected
+        setSuccess("Service submitted successfully!");
+
+        // In case service_id isn't available, fetch it from another endpoint
+        try {
+          const serviceResponse = await fetch(
+            `https://backend.onetouchmoments.com/vendor_controller/Vendor_services/get_latest_service?vendor_id=${data.vendor_id}`
+          );
+
+          if (serviceResponse.ok) {
+            const serviceData = await serviceResponse.json();
+            if (serviceData.status === 1 && serviceData.data) {
+              const latestServiceId = serviceData.data.service_id;
+
+              setTimeout(() => {
+                navigate(
+                  `/payment?service_id=${latestServiceId}&vendor_id=${data.vendor_id}`
+                );
+              }, 2000);
+              return;
+            }
+          }
+        } catch (serviceError) {
+          console.error("Error fetching service ID:", serviceError);
+        }
+
+        // Fallback with just vendor_id if service_id isn't available
+        setTimeout(() => {
+          navigate(`/payment?vendor_id=${data.vendor_id}`);
+        }, 2000);
+      }
     } catch (error) {
       console.error("Submission error:", error);
-      setError("An error occurred while submitting your service. Please try again later.");
+      setError(
+        "An error occurred while submitting your service. Please try again later."
+      );
     } finally {
       setIsSubmitting(false);
     }
-};
+  };
+
   return (
     <div className="max-w-3xl mx-auto mt-10 bg-gradient-to-r from-white to-red-50 p-8 rounded-xl shadow-lg relative overflow-hidden">
       {/* Background decorative elements */}
@@ -127,7 +199,7 @@ const DholRegister = () => {
       <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-100 rounded-full -ml-32 -mb-32 opacity-50"></div>
 
       <h2 className="text-center text-3xl font-bold mb-6 text-red-700 relative">
-        Dhol Services Registration
+        Services Registration
         <div className="h-1 w-20 bg-red-500 mx-auto mt-2 rounded-full"></div>
       </h2>
 
@@ -191,8 +263,8 @@ const DholRegister = () => {
               <input
                 name="service_cat"
                 type="hidden"
-              
                 {...register("service_cat")}
+                value="photo video"
               />
             </div>
 
@@ -394,6 +466,27 @@ const DholRegister = () => {
 
             <div>
               <label className="block text-gray-700 text-sm font-medium mb-1">
+                Amount
+              </label>
+              <input
+                type="number"
+                defaultValue="699"
+                {...register("amount", {
+                  required: "Amount is required",
+                })}
+                className={`w-full p-3 border ${
+                  errors.amount ? "border-red-600 bg-red-50" : "border-gray-300"
+                } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200`}
+              />
+              {errors.amount && (
+                <p className="text-red-500 text-xs mt-1">
+                  {errors.amount.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1">
                 Pincode
               </label>
               <input
@@ -456,6 +549,40 @@ const DholRegister = () => {
           </div>
         </div>
 
+        <div>
+          <label className="block text-gray-700 text-sm font-medium mb-2">
+            Tell us about your services
+          </label>
+          <textarea
+            {...register("description", {
+              required: "Description is required",
+              minLength: {
+                value: 100,
+                message: "Description should be at least 100 characters",
+              },
+              maxLength: {
+                value: 1000,
+                message: "Description cannot exceed 1000 characters",
+              },
+            })}
+            placeholder="Describe your photography/videography services, experience, equipment, and any special offerings..."
+            rows={6}
+            className={`w-full p-3 border ${
+              errors.description
+                ? "border-red-600 bg-red-50"
+                : "border-gray-300"
+            } rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent transition duration-200 resize-none`}
+          ></textarea>
+          {errors.description && (
+            <p className="text-red-500 text-xs mt-1">
+              {errors.description.message}
+            </p>
+          )}
+          <p className="text-gray-500 text-xs mt-2">
+            Min 100 characters, max 1000 characters. Include details about your
+            experience, equipment, style, and special services you offer.
+          </p>
+        </div>
         {/* Media Upload Section */}
         <div className="bg-white p-5 rounded-lg shadow-md mb-6">
           <h3 className="text-lg font-semibold text-red-700 mb-4 border-b pb-2">
